@@ -40,48 +40,30 @@ def get_changed_files():
         return []
 
 
-def get_recent_commits(files, limit=20):
+def get_recent_messages(files, limit=20):
     """Get recent commit messages for the specified files."""
     if not files:
         return []
 
     try:
-        cmd = ["git", "log", f"-{limit}", "--pretty=format:%B"] + files
+        separator = "===COMMIT_SEPARATOR==="
+        cmd = ["git", "log", f"-{limit}", f"--pretty=format:%B{separator}", "--"] + files
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        commits = result.stdout.strip().split("\n\n")
+        commits = result.stdout.strip().split(separator)
         return [commit for commit in commits if commit.strip()]
     except subprocess.CalledProcessError:
         return []
 
 
-def analyze_commit_patterns(commits):
-    """Analyze recent commits to understand the commit message pattern."""
-    summaries = []
-    bodies = []
-
-    for commit in commits:
-        lines = commit.strip().split("\n")
-        if lines:
-            summaries.append(lines[0])
-            if len(lines) > 1:
-                bodies.append("\n".join(lines[1:]).strip())
-
-    return summaries, bodies
-
-
-def generate_commit_message(diff, summaries, bodies, model="openrouter/auto"):
+def generate_commit_message(
+    diff, recent_messages, model="openrouter/auto", debug=False
+):
     """Generate a commit message using OpenAI."""
     # Create examples from recent commits
-    examples = []
-    for i, summary in enumerate(summaries):
-        body = bodies[i] if i < len(bodies) else ""
-        example = summary
-        if body:
-            example += f"\n{body}"
-        examples.append(example)
-
     examples_text = (
-        "\n\n---\n\n".join(examples) if examples else "No examples available"
+        "\n---\n".join(recent_messages)
+        if recent_messages
+        else "No examples available"
     )
 
     prompt = f"""You are a git commit message generator. Based on the git diff and examples of
@@ -95,13 +77,21 @@ Follow these rules strictly:
 5. Focus on what changed and why, not how
 6. Use imperative mood ("Fix", "Add", "Update", not "Fixed", "Added")
 
-Examples of recent commits:
-{examples_text}
-
 Git diff to analyze:
+<diff>
 {diff}
+</diff>
+
+Examples of recent commits that touched these files:
+<examples>
+{examples_text}
+</examples>
 
 Generate only the commit message with no other text."""
+
+    if debug:
+        print("Debug mode enabled. Prompt being sent to OpenRouter:")
+        print(prompt)
 
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
@@ -148,6 +138,7 @@ def main():
         type=int,
         help="How many recent commits to analyze",
     )
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
 
     # Check if we have an API key
@@ -167,13 +158,12 @@ def main():
     files = get_changed_files()
 
     # Get recent commit messages for these files
-    recent_commits = get_recent_commits(files, limit=args.history_limit)
-
-    # Analyze commit patterns
-    summaries, bodies = analyze_commit_patterns(recent_commits)
+    recent_messages = get_recent_messages(files, limit=args.history_limit)
 
     # Generate commit message
-    commit_message = generate_commit_message(diff, summaries, bodies, args.model)
+    commit_message = generate_commit_message(
+        diff, recent_messages, args.model, debug=args.debug
+    )
 
     # Output the commit message
     print(commit_message)
