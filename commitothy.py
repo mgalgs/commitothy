@@ -6,10 +6,11 @@
 # ]
 # ///
 
+import argparse
+import os
+import re
 import subprocess
 import sys
-import os
-import argparse
 
 from openai import OpenAI
 
@@ -86,11 +87,14 @@ def llm_call(prompt, model="openrouter/auto", debug=False):
             },
         )
 
-        return response.choices[0].message.content.strip()
+        return {
+            "content": response.choices[0].message.content.strip(),
+            "model": response.model,
+        }
     except Exception as e:
         if debug:
             print(f"Error calling OpenRouter API: {e}")
-        return
+        return None
 
 
 def generate_commit_message(
@@ -135,9 +139,14 @@ Generate only the commit message with no other text."""
 
     while num_retries > 0:
         response = llm_call(prompt, model=model, debug=debug)
-        if response:
-            return response.strip()
+        if response and response.get("content"):
+            return {
+                "message": response["content"].strip(),
+                "model": response["model"],
+            }
         num_retries -= 1
+
+    return None
 
 
 def main():
@@ -163,6 +172,11 @@ def main():
         help="How many times to retry the LLM API call on failure",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument(
+        "--no-trailer",
+        action="store_true",
+        help="Don't add model name as a trailer in the commit message",
+    )
     args = parser.parse_args()
 
     if not os.environ.get("OPENROUTER_API_KEY"):
@@ -180,13 +194,29 @@ def main():
 
     recent_messages = get_recent_messages(files, limit=args.history_limit)
 
-    commit_message = generate_commit_message(
+    result = generate_commit_message(
         diff,
         recent_messages,
         args.model,
         debug=args.debug,
         num_retries=args.num_retries,
     )
+
+    if not result:
+        print("Failed to generate commit message after retries.")
+        sys.exit(1)
+
+    commit_message = result["message"]
+
+    if not args.no_trailer:
+        trailer = f"Commit-Message-Co-Author: {result['model']}"
+        last_line = commit_message.split("\n")[-1].strip()
+        if re.match(r"^[^\s]+:\s", last_line):
+            # Message already has trailers, append ours to the list
+            commit_message += f"\n{trailer}"
+        else:
+            # No trailers, add ours as a new line
+            commit_message += f"\n\n{trailer}"
 
     print(commit_message)
 
