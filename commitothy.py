@@ -130,11 +130,19 @@ Generate only the commit message with no other text."""
 
 def main():
     """Main function."""
-    parser = argparse.ArgumentParser(description="Generate git commit messages using AI")
+    parser = argparse.ArgumentParser(
+        description="Generate git commit messages using AI"
+    )
     parser.add_argument(
         "--model",
         default="openrouter/auto",
-        help="Model to use for generation (default: openrouter/auto)"
+        help="Model to use for generation (default: openrouter/auto)",
+    )
+    parser.add_argument(
+        "--history-limit",
+        default=20,
+        type=int,
+        help="How many recent commits to analyze",
     )
     args = parser.parse_args()
 
@@ -155,7 +163,7 @@ def main():
     files = get_changed_files()
 
     # Get recent commit messages for these files
-    recent_commits = get_recent_commits(files)
+    recent_commits = get_recent_commits(files, limit=args.history_limit)
 
     # Analyze commit patterns
     summaries, bodies = analyze_commit_patterns(recent_commits)
