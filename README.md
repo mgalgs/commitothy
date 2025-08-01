@@ -19,6 +19,8 @@ style of your existing project.
   - Style matching (supports conventional commits, kernel style, etc.)
 - 🔧 Configurable via command-line options
 - 🐍 Standalone script using `uv` and `openai` - no heavy dependencies
+- 💬 Adds a `Commit-Message-Co-Author` trailer indicating which AI model
+  generated the message (disable with `--no-trailer`)
 
 ## Installation
 
@@ -56,6 +58,7 @@ Other options:
 ```bash
 --history-limit N     # number of recent commits to analyze (default: 20)
 --num-retries N       # retry failed API calls (default: 3)
+--no-trailer            # don't add AI model attribution trailer
 --debug               # show full prompt sent to model
 ```
 
