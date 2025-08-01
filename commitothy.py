@@ -73,11 +73,11 @@ def generate_commit_message(diff, summaries, bodies, model="openrouter/auto"):
     """Generate a commit message using OpenAI."""
     # Create examples from recent commits
     examples = []
-    for i, summary in enumerate(summaries[:3]):
+    for i, summary in enumerate(summaries):
         body = bodies[i] if i < len(bodies) else ""
-        example = f"Summary: {summary}"
+        example = summary
         if body:
-            example += f"\nBody:\n{body}"
+            example += f"\n{body}"
         examples.append(example)
 
     examples_text = (
