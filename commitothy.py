@@ -120,6 +120,10 @@ Generate only the commit message with no other text."""
             ],
             temperature=0.7,
             max_tokens=500,
+            extra_headers={
+                "HTTP-Referer": "https://mgalgs.io",
+                "X-Title": "Commitothy",
+            },
         )
 
         return response.choices[0].message.content.strip()
