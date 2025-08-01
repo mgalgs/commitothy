@@ -115,6 +115,7 @@ Follow these rules strictly:
    - "subsystem1: [subsystem2:] Description" (Linux kernel style))
    - "<(fix|feat|chore)>[(subsystem)]: Description" (Conventional Commits style)
    - Something else that matches the examples
+8. Only use ASCII, no Unicode characters
 
 Git diff to analyze:
 <diff>
