@@ -9,6 +9,7 @@
 import subprocess
 import sys
 import os
+import argparse
 
 from openai import OpenAI
 
@@ -68,7 +69,7 @@ def analyze_commit_patterns(commits):
     return summaries, bodies
 
 
-def generate_commit_message(diff, summaries, bodies):
+def generate_commit_message(diff, summaries, bodies, model="openrouter/auto"):
     """Generate a commit message using OpenAI."""
     # Create examples from recent commits
     examples = []
@@ -109,7 +110,7 @@ Generate only the commit message with no other text."""
 
     try:
         response = client.chat.completions.create(
-            model="openrouter/auto",
+            model=model,
             messages=[
                 {
                     "role": "system",
@@ -129,6 +130,14 @@ Generate only the commit message with no other text."""
 
 def main():
     """Main function."""
+    parser = argparse.ArgumentParser(description="Generate git commit messages using AI")
+    parser.add_argument(
+        "--model",
+        default="openrouter/auto",
+        help="Model to use for generation (default: openrouter/auto)"
+    )
+    args = parser.parse_args()
+
     # Check if we have an API key
     if not os.environ.get("OPENROUTER_API_KEY"):
         print("Error: OPENROUTER_API_KEY environment variable not set")
@@ -152,7 +161,7 @@ def main():
     summaries, bodies = analyze_commit_patterns(recent_commits)
 
     # Generate commit message
-    commit_message = generate_commit_message(diff, summaries, bodies)
+    commit_message = generate_commit_message(diff, summaries, bodies, args.model)
 
     # Output the commit message
     print(commit_message)
