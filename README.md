@@ -18,7 +18,7 @@ style of your existing project.
   - Optional multi-line body with 72-character wrapping
   - Style matching (supports conventional commits, kernel style, etc.)
 - 🔧 Configurable via command-line options
-- 🐍 Standalone script using `uv` and `openai` – no heavy dependencies
+- 🐍 Standalone script using `uv` and `openai` - no heavy dependencies
 
 ## Installation
 
