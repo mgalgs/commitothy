@@ -80,7 +80,7 @@ def llm_call(prompt, model="openrouter/auto", debug=False):
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=500,
+            max_tokens=2000,
             extra_headers={
                 "HTTP-Referer": "https://mgalgs.io",
                 "X-Title": "Commitothy",
