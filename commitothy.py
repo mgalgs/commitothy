@@ -47,7 +47,13 @@ def get_recent_messages(files, limit=20):
 
     try:
         separator = "===COMMIT_SEPARATOR==="
-        cmd = ["git", "log", f"-{limit}", f"--pretty=format:%B{separator}", "--"] + files
+        cmd = [
+            "git",
+            "log",
+            f"-{limit}",
+            f"--pretty=format:%B{separator}",
+            "--",
+        ] + files
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         commits = result.stdout.strip().split(separator)
         return [commit for commit in commits if commit.strip()]
@@ -55,44 +61,7 @@ def get_recent_messages(files, limit=20):
         return []
 
 
-def generate_commit_message(
-    diff, recent_messages, model="openrouter/auto", debug=False
-):
-    """Generate a commit message using OpenAI."""
-    # Create examples from recent commits
-    examples_text = (
-        "\n---\n".join(recent_messages)
-        if recent_messages
-        else "No examples available"
-    )
-
-    prompt = f"""You are a git commit message generator. Based on the git diff and examples of
-recent commit messages for these files, generate an appropriate commit message.
-
-Follow these rules strictly:
-1. First line (summary) should be 50-72 characters max
-2. If including a body, separate it from summary with a blank line
-3. Wrap body lines at 72 characters
-4. Use the same style, tone, and format as the examples
-5. Focus on what changed and why, not how
-6. Use imperative mood ("Fix", "Add", "Update", not "Fixed", "Added")
-
-Git diff to analyze:
-<diff>
-{diff}
-</diff>
-
-Examples of recent commits that touched these files:
-<examples>
-{examples_text}
-</examples>
-
-Generate only the commit message with no other text."""
-
-    if debug:
-        print("Debug mode enabled. Prompt being sent to OpenRouter:")
-        print(prompt)
-
+def llm_call(prompt, model="openrouter/auto", debug=False):
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=os.environ.get("OPENROUTER_API_KEY", ""),
@@ -118,8 +87,56 @@ Generate only the commit message with no other text."""
 
         return response.choices[0].message.content.strip()
     except Exception as e:
-        print(f"Error calling OpenRouter API: {e}")
-        sys.exit(1)
+        if debug:
+            print(f"Error calling OpenRouter API: {e}")
+        return
+
+
+def generate_commit_message(
+    diff, recent_messages, model="openrouter/auto", debug=False, num_retries=3
+):
+    """Generate a commit message using OpenAI."""
+    # Create examples from recent commits
+    examples_text = (
+        "\n---\n".join(recent_messages) if recent_messages else "No examples available"
+    )
+
+    prompt = f"""You are a git commit message generator. Based on the git diff and examples of
+recent commit messages for these files, generate an appropriate commit message.
+
+Follow these rules strictly:
+1. First line (summary) should be 50-72 characters max
+2. If including a body, separate it from summary with a blank line
+3. Wrap body lines at 72 characters
+4. Use the same style, tone, and format as the examples
+5. Focus on what changed and why, not how
+6. Use imperative mood ("Fix", "Add", "Update", not "Fixed", "Added")
+7. Pay close attention to the Summary line format in the examples. Example formats:
+   - "subsystem1: [subsystem2:] Description" (Linux kernel style))
+   - "<(fix|feat|chore)>[(subsystem)]: Description" (Conventional Commits style)
+   - Something else that matches the examples
+
+Git diff to analyze:
+<diff>
+{diff}
+</diff>
+
+Examples of recent commits that touched these files:
+<examples>
+{examples_text}
+</examples>
+
+Generate only the commit message with no other text."""
+
+    if debug:
+        print("Debug mode enabled. Prompt being sent to OpenRouter:")
+        print(prompt)
+
+    while num_retries > 0:
+        response = llm_call(prompt, model=model, debug=debug)
+        if response:
+            return response.strip()
+        num_retries -= 1
 
 
 def main():
@@ -137,6 +154,12 @@ def main():
         default=20,
         type=int,
         help="How many recent commits to analyze",
+    )
+    parser.add_argument(
+        "--num-retries",
+        default=3,
+        type=int,
+        help="How many times to retry the LLM API call on failure",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
@@ -162,7 +185,11 @@ def main():
 
     # Generate commit message
     commit_message = generate_commit_message(
-        diff, recent_messages, args.model, debug=args.debug
+        diff,
+        recent_messages,
+        args.model,
+        debug=args.debug,
+        num_retries=args.num_retries,
     )
 
     # Output the commit message
