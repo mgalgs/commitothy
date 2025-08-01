@@ -62,6 +62,7 @@ def get_recent_messages(files, limit=20):
 
 
 def llm_call(prompt, model="openrouter/auto", debug=False):
+    """Call the OpenRouter API to generate a commit message."""
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=os.environ.get("OPENROUTER_API_KEY", ""),
@@ -96,7 +97,6 @@ def generate_commit_message(
     diff, recent_messages, model="openrouter/auto", debug=False, num_retries=3
 ):
     """Generate a commit message using OpenAI."""
-    # Create examples from recent commits
     examples_text = (
         "\n---\n".join(recent_messages) if recent_messages else "No examples available"
     )
@@ -164,26 +164,21 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
 
-    # Check if we have an API key
     if not os.environ.get("OPENROUTER_API_KEY"):
         print("Error: OPENROUTER_API_KEY environment variable not set")
         print("Please set it with: export OPENROUTER_API_KEY=your_api_key_here")
         sys.exit(1)
 
-    # Get staged changes
     diff = get_staged_diff()
 
     if not diff.strip():
         print("No staged changes found. Please stage some changes first.")
         sys.exit(1)
 
-    # Get changed files
     files = get_changed_files()
 
-    # Get recent commit messages for these files
     recent_messages = get_recent_messages(files, limit=args.history_limit)
 
-    # Generate commit message
     commit_message = generate_commit_message(
         diff,
         recent_messages,
@@ -192,7 +187,6 @@ def main():
         num_retries=args.num_retries,
     )
 
-    # Output the commit message
     print(commit_message)
 
 
