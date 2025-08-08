@@ -119,7 +119,7 @@ Follow these rules strictly:
    - "<(fix|feat|chore)>[(subsystem)]: Description" (Conventional Commits style)
    - Something else that matches the examples
 8. Only use ASCII, no Unicode characters
-9. Do not add any trailer lines, even if the examples have them.
+9. DO NOT ADD ANY TRAILER LINES, even if the examples have them.
 
 Git diff to analyze:
 <diff>
@@ -138,7 +138,10 @@ implementation details. Explain *why* the change was made, not *how* it was
 done.
 
 IMPORANT: Imitate the style and format of the examples as closely as possible.
-Pay attention to the lengths of messages, tone, personality, and structure."""
+Pay attention to the lengths of messages, tone, personality, and structure.
+
+REMEMBER: do not add trailer lines. For example, `Signed-off-by:`, `Commit-Message-Co-Author:`,
+`Change-Id:`, and ANY OTHER trailer should NOT be included."""
 
     if debug:
         print("Debug mode enabled. Prompt being sent to OpenRouter:")
