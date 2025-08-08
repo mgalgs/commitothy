@@ -120,6 +120,7 @@ Follow these rules strictly:
    - "<(fix|feat|chore)>[(subsystem)]: Description" (Conventional Commits style)
    - Something else that matches the examples
 8. Only use ASCII, no Unicode characters
+9. Do not add any trailer lines, even if the examples have them.
 
 Git diff to analyze:
 <diff>
@@ -131,7 +132,14 @@ Examples of recent commits that touched these files:
 {examples_text}
 </examples>
 
-Generate only the commit message with no other text."""
+Generate only the commit message with no other text.
+
+Remember that you are describing the rationale behind the change, not the
+implementation details. Explain *why* the change was made, not *how* it was
+done.
+
+IMPORANT: Imitate the style and format of the examples as closely as possible.
+Pay attention to the lengths of messages, tone, personality, and structure."""
 
     if debug:
         print("Debug mode enabled. Prompt being sent to OpenRouter:")
