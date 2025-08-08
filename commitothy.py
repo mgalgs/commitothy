@@ -15,11 +15,10 @@ import sys
 from openai import OpenAI
 
 
-def get_staged_diff():
-    """Get the staged diff from git."""
+def git(args):
     try:
         result = subprocess.run(
-            ["git", "diff", "--staged"], capture_output=True, text=True, check=True
+            ["git"] + args, capture_output=True, text=True, check=True
         )
         return result.stdout
     except subprocess.CalledProcessError:
@@ -168,6 +167,11 @@ def main():
         help="Model to use for generation (default: openrouter/auto)",
     )
     parser.add_argument(
+        "--head",
+        action="store_true",
+        help="Analyze changes from `git show HEAD` rather than `git diff --staged`. Useful when amending.",
+    )
+    parser.add_argument(
         "--history-limit",
         default=20,
         type=int,
@@ -192,7 +196,7 @@ def main():
         print("Please set it with: export OPENROUTER_API_KEY=your_api_key_here")
         sys.exit(1)
 
-    diff = get_staged_diff()
+    diff = git(["show", "HEAD"]) if args.head else git(["diff", "--staged"])
 
     if not diff.strip():
         print("No staged changes found. Please stage some changes first.")
