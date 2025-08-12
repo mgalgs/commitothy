@@ -15,6 +15,51 @@ import sys
 from openai import OpenAI
 
 
+PROMPT_TEMPLATE = """You are a commit message generator. Based on the context below (git diff, examples of recent commit messages for these files, etc), generate an appropriate commit message.
+
+{preamble}
+
+Follow these rules strictly:
+1. First line (summary) should be 50-72 characters max
+2. If including a body, separate it from summary with a blank line
+3. Wrap body lines at 72 characters
+4. Use the same style, tone, and format as the examples
+5. Focus on what changed and why, not how
+6. Use imperative mood ("Fix", "Add", "Update", not "Fixed", "Added")
+7. Pay close attention to the Summary line format in the examples. Example formats:
+   - "subsystem1: [subsystem2:] Description" (Linux kernel style))
+   - "<(fix|feat|chore)>[(subsystem)]: Description" (Conventional Commits style)
+   - Something else that matches the examples
+8. Only use ASCII, no Unicode characters
+
+Git diff to analyze:
+<diff>
+{diff}
+</diff>
+
+Examples of recent commits that touched these files:
+<examples>
+{examples_text}
+</examples>
+
+{extra_context}
+
+Generate only the commit message with no other text.
+
+Remember that you are describing the rationale behind the change, not the
+implementation details. Explain *why* the change was made, not *how* it was
+done.
+
+IMPORANT: Imitate the style and format of the examples as closely as possible.
+Pay attention to the lengths of messages, tone, personality, and structure.
+
+REMEMBER: do not add trailer lines. For example, `Signed-off-by:`, `Commit-Message-Co-Author:`,
+`Change-Id:`, and ANY OTHER trailer should NOT be included.
+
+{postamble}
+"""
+
+
 def git(args):
     try:
         result = subprocess.run(
@@ -61,6 +106,17 @@ def get_recent_messages(files, limit=20):
         return []
 
 
+def get_commit_message_file():
+    """Read the content of .git/COMMIT_MESSAGE."""
+    try:
+        with open(".git/COMMIT_MESSAGE", "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        print(f"Error reading .git/COMMIT_MESSAGE: {e}")
+        return None
+
 def llm_call(prompt, model="openrouter/auto", debug=False):
     """Call the OpenRouter API to generate a commit message."""
     client = OpenAI(
@@ -95,53 +151,51 @@ def llm_call(prompt, model="openrouter/auto", debug=False):
             print(f"Error calling OpenRouter API: {e}")
         return None
 
-
 def generate_commit_message(
-    diff, recent_messages, model="openrouter/auto", debug=False, num_retries=3
+    diff, recent_messages, model="openrouter/auto", debug=False, num_retries=3, improve_message=False, cursor_position=None
 ):
-    """Generate a commit message using OpenAI."""
+    """Generate or improve a commit message using OpenAI."""
     examples_text = (
         "\n---\n".join(recent_messages) if recent_messages else "No examples available"
     )
 
-    prompt = f"""You are a git commit message generator. Based on the git diff and examples of
-recent commit messages for these files, generate an appropriate commit message.
+    if improve_message:
+        commit_message = get_commit_message_file()
+        if not commit_message:
+            print("Error: No existing commit message found in .git/COMMIT_MESSAGE")
+            return None
 
-Follow these rules strictly:
-1. First line (summary) should be 50-72 characters max
-2. If including a body, separate it from summary with a blank line
-3. Wrap body lines at 72 characters
-4. Use the same style, tone, and format as the examples
-5. Focus on what changed and why, not how
-6. Use imperative mood ("Fix", "Add", "Update", not "Fixed", "Added")
-7. Pay close attention to the Summary line format in the examples. Example formats:
-   - "subsystem1: [subsystem2:] Description" (Linux kernel style))
-   - "<(fix|feat|chore)>[(subsystem)]: Description" (Conventional Commits style)
-   - Something else that matches the examples
-8. Only use ASCII, no Unicode characters
-9. DO NOT ADD ANY TRAILER LINES, even if the examples have them.
+        with_cursor_position_short = ""
+        with_cursor_position = ""
+        replace_cursor_position = ""
+        if cursor_position is not None:
+            if cursor_position < 0 or cursor_position > len(commit_message):
+                print("Error: Invalid cursor position")
+                return None
+            with_cursor_position_short = " with cursor position"
+            with_cursor_position = " with a cursor position marked by `<CURSOR_IS_HERE>`"
+            replace_cursor_position = "Replace `<CURSOR_IS_HERE>` with the new content."
+            commit_message = (
+                commit_message[:cursor_position]
+                + "<CURSOR_IS_HERE>"
+                + commit_message[cursor_position:]
+            )
 
-Git diff to analyze:
-<diff>
-{diff}
-</diff>
+        extra_context = f"""Existing commit message{with_cursor_position_short}:
+<message>
+{commit_message}
+</message>
+"""
 
-Examples of recent commits that touched these files:
-<examples>
-{examples_text}
-</examples>
+        preamble = f"Below is an existing commit message that you should improve{with_cursor_position}."
+        postamble = replace_cursor_position
+        prompt = PROMPT_TEMPLATE.format(diff=diff, examples_text=examples_text, extra_context=extra_context, preamble=preamble, postamble=postamble)
+    else:
+        preamble = ""
+        postamble = ""
+        prompt = PROMPT_TEMPLATE.format(diff=diff, examples_text=examples_text, extra_context="", preamble=preamble, postamble=postamble)
 
-Generate only the commit message with no other text.
-
-Remember that you are describing the rationale behind the change, not the
-implementation details. Explain *why* the change was made, not *how* it was
-done.
-
-IMPORANT: Imitate the style and format of the examples as closely as possible.
-Pay attention to the lengths of messages, tone, personality, and structure.
-
-REMEMBER: do not add trailer lines. For example, `Signed-off-by:`, `Commit-Message-Co-Author:`,
-`Change-Id:`, and ANY OTHER trailer should NOT be included."""
+    prompt = prompt.strip()
 
     if debug:
         print("Debug mode enabled. Prompt being sent to OpenRouter:")
@@ -157,7 +211,6 @@ REMEMBER: do not add trailer lines. For example, `Signed-off-by:`, `Commit-Messa
         num_retries -= 1
 
     return None
-
 
 def main():
     """Main function."""
@@ -192,6 +245,16 @@ def main():
         action="store_true",
         help="Don't add model name as a trailer in the commit message",
     )
+    parser.add_argument(
+        "--improve-message",
+        action="store_true",
+        help="Improve an existing commit message from .git/COMMIT_MESSAGE",
+    )
+    parser.add_argument(
+        "--improve-message-cursor-position",
+        type=int,
+        help="Cursor position in .git/COMMIT_MESSAGE for completion (requires --improve-message)",
+    )
     args = parser.parse_args()
 
     if not os.environ.get("OPENROUTER_API_KEY"):
@@ -215,6 +278,8 @@ def main():
         args.model,
         debug=args.debug,
         num_retries=args.num_retries,
+        improve_message=args.improve_message,
+        cursor_position=args.improve_message_cursor_position,
     )
 
     if not result:
