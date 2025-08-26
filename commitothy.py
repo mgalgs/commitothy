@@ -219,8 +219,8 @@ def main():
     )
     parser.add_argument(
         "--model",
-        default="openrouter/auto",
-        help="Model to use for generation (default: openrouter/auto)",
+        default="qwen/qwen3-235b-a22b-2507",
+        help="Model to use for generation (default: qwen/qwen3-235b-a22b-2507)",
     )
     parser.add_argument(
         "--head",
