@@ -129,13 +129,7 @@ def get_commit_message_file() -> str | None:
 
     commit_message_file = gitroot / ".git" / "COMMIT_EDITMSG"
     if commit_message_file.exists():
-        return "\n".join(
-            [
-                l
-                for l in commit_message_file.read_text().splitlines()
-                if not l.startswith("#")
-            ]
-        ).strip()
+        return commit_message_file.read_text()
 
     return None
 
