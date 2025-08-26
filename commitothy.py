@@ -201,7 +201,9 @@ def generate_commit_message(
         where_to_add = "to the end"
         if cursor_position is not None:
             if cursor_position < 0 or cursor_position > len(commit_message):
-                print("Error: Invalid cursor position")
+                print(
+                    f"Error: Invalid cursor position ({cursor_position}, len={len(commit_message)})"
+                )
                 return None
             with_cursor_position_short = " with cursor position"
             with_cursor_position = (
