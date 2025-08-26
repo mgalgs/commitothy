@@ -151,8 +151,15 @@ def llm_call(prompt, model="openrouter/auto", debug=False):
             print(f"Error calling OpenRouter API: {e}")
         return None
 
+
 def generate_commit_message(
-    diff, recent_messages, model="openrouter/auto", debug=False, num_retries=3, improve_message=False, cursor_position=None
+    diff,
+    recent_messages,
+    model="openrouter/auto",
+    debug=False,
+    num_retries=3,
+    improve_message=False,
+    cursor_position=None,
 ):
     """Generate or improve a commit message using OpenAI."""
     examples_text = (
@@ -168,20 +175,24 @@ def generate_commit_message(
         with_cursor_position_short = ""
         with_cursor_position = ""
         replace_cursor_position = ""
+        where_to_add = "to the end"
         if cursor_position is not None:
             if cursor_position < 0 or cursor_position > len(commit_message):
                 print("Error: Invalid cursor position")
                 return None
             with_cursor_position_short = " with cursor position"
-            with_cursor_position = " with a cursor position marked by `<CURSOR_IS_HERE>`"
+            with_cursor_position = (
+                " with a cursor position marked by `<CURSOR_IS_HERE>`"
+            )
             replace_cursor_position = "Replace `<CURSOR_IS_HERE>` with the new content."
             commit_message = (
                 commit_message[:cursor_position]
                 + "<CURSOR_IS_HERE>"
                 + commit_message[cursor_position:]
             )
+            where_to_add = "to the cursor position"
 
-        extra_context = f"""Existing commit message{with_cursor_position_short}:
+        extra_context = f"""You need to improve an existing commit message that the user has already started on. Preserve the user's content exactly, only add content to {where_to_add}. Existing commit message{with_cursor_position_short}:
 <message>
 {commit_message}
 </message>
@@ -189,11 +200,23 @@ def generate_commit_message(
 
         preamble = f"Below is an existing commit message that you should improve{with_cursor_position}."
         postamble = replace_cursor_position
-        prompt = PROMPT_TEMPLATE.format(diff=diff, examples_text=examples_text, extra_context=extra_context, preamble=preamble, postamble=postamble)
+        prompt = PROMPT_TEMPLATE.format(
+            diff=diff,
+            examples_text=examples_text,
+            extra_context=extra_context,
+            preamble=preamble,
+            postamble=postamble,
+        )
     else:
         preamble = ""
         postamble = ""
-        prompt = PROMPT_TEMPLATE.format(diff=diff, examples_text=examples_text, extra_context="", preamble=preamble, postamble=postamble)
+        prompt = PROMPT_TEMPLATE.format(
+            diff=diff,
+            examples_text=examples_text,
+            extra_context="",
+            preamble=preamble,
+            postamble=postamble,
+        )
 
     prompt = prompt.strip()
 
@@ -211,6 +234,7 @@ def generate_commit_message(
         num_retries -= 1
 
     return None
+
 
 def main():
     """Main function."""
