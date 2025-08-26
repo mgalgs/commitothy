@@ -6,6 +6,7 @@
 # ]
 # ///
 
+from pathlib import Path
 import argparse
 import os
 import re
@@ -71,6 +72,19 @@ def git(args):
         sys.exit(1)
 
 
+def get_git_root(path=".") -> Path | None:
+    """Return the repository root by walking up until a .git directory is found."""
+    path = os.path.abspath(path)
+
+    while True:
+        if os.path.isdir(os.path.join(path, ".git")):
+            return Path(path)
+        newpath = os.path.dirname(path)
+        if newpath == path:  # reached filesystem root
+            return None
+        path = newpath
+
+
 def get_changed_files():
     """Get list of staged files."""
     try:
@@ -106,16 +120,25 @@ def get_recent_messages(files, limit=20):
         return []
 
 
-def get_commit_message_file():
+def get_commit_message_file() -> str | None:
     """Read the content of .git/COMMIT_MESSAGE."""
-    try:
-        with open(".git/COMMIT_MESSAGE", "r") as f:
-            return f.read().strip()
-    except FileNotFoundError:
+    gitroot = get_git_root()
+    if gitroot is None:
+        print("No gitroot")
         return None
-    except Exception as e:
-        print(f"Error reading .git/COMMIT_MESSAGE: {e}")
-        return None
+
+    commit_message_file = gitroot / ".git" / "COMMIT_EDITMSG"
+    if commit_message_file.exists():
+        return "\n".join(
+            [
+                l
+                for l in commit_message_file.read_text().splitlines()
+                if not l.startswith("#")
+            ]
+        ).strip()
+
+    return None
+
 
 def llm_call(prompt, model="openrouter/auto", debug=False):
     """Call the OpenRouter API to generate a commit message."""
