@@ -16,7 +16,8 @@ import sys
 from openai import OpenAI
 
 
-PROMPT_TEMPLATE = """You are a commit message generator. Based on the context below (git diff, examples of recent commit messages for these files, etc), generate an appropriate commit message.
+PROMPT_TEMPLATE = """\
+You are a commit message generator. Based on the context below (git diff, examples of recent commit messages for these files, etc), generate an appropriate commit message.
 
 {preamble}
 
