@@ -88,6 +88,8 @@ Guidelines:
 {mode_instructions}
 - Be specific, reference lines/hunks when possible.
 - Professional, helpful tone. No preface or closing beyond the required sections.
+- Include code when recommendations are provided. Including code is extremely
+  helpful for busy developers looking to incorporate review feedback quickly.
 
 Context to review:
 
