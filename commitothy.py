@@ -565,8 +565,9 @@ def main():
             num_retries=args.num_retries,
         )
         if review_text:
-            header = f"# Code review ({mode})"
-            print("\n" + header)
+            header = f"*** CODE REVIEW ({mode}) ***"
+            hr = "=" * len(header)
+            print(f"\n# {hr}\n# {header}\n# {hr}\n")
             print(comment_lines(review_text))
 
 
