@@ -45,6 +45,7 @@ Examples of recent commits that touched these files:
 </examples>
 
 {extra_context}
+{recent_patches_text}
 
 Generate only the commit message with no other text.
 
@@ -219,6 +220,14 @@ def get_recent_patches(files: list[str], limit=5) -> list[str]:
     return ret_patches
 
 
+def format_recent_patches(patches: list[str]) -> str:
+    return (
+        "<recent_patches>"
+        + "".join(f"\n<patch>\n{patch}\n</patch>\n" for patch in patches)
+        + "</recent_patches>"
+    )
+
+
 def get_commit_message_file() -> str | None:
     """Read the content of .git/COMMIT_MESSAGE."""
     gitroot = get_git_root()
@@ -270,7 +279,8 @@ def llm_call(prompt, model="openrouter/auto", debug=False, max_tokens=2000):
 
 def generate_commit_message(
     diff,
-    recent_messages,
+    recent_messages: list[str],
+    recent_patches: list[str],
     model="openrouter/auto",
     debug=False,
     num_retries=3,
@@ -281,6 +291,13 @@ def generate_commit_message(
     examples_text = (
         "\n---\n".join(recent_messages) if recent_messages else "No examples available"
     )
+
+    recent_patches_text = ""
+    if recent_patches:
+        recent_patches_text = (
+            "Recent patches touching these files:\n"
+            + format_recent_patches(recent_patches)
+        )
 
     if improve_message:
         commit_message = get_commit_message_file()
@@ -321,6 +338,7 @@ def generate_commit_message(
         prompt = PROMPT_TEMPLATE.format(
             diff=diff,
             examples_text=examples_text,
+            recent_patches_text=recent_patches_text,
             extra_context=extra_context,
             preamble=preamble,
             postamble=postamble,
@@ -331,6 +349,7 @@ def generate_commit_message(
         prompt = PROMPT_TEMPLATE.format(
             diff=diff,
             examples_text=examples_text,
+            recent_patches_text=recent_patches_text,
             extra_context="",
             preamble=preamble,
             postamble=postamble,
@@ -387,7 +406,7 @@ def generate_code_review(
     model: str,
     debug: bool,
     include_full_file_context: bool,
-    consider_recent_patches: bool,
+    recent_patches_to_consider: list[str],
     num_retries: int = 3,
 ):
     file_context = ""
@@ -395,15 +414,11 @@ def generate_code_review(
         file_context = collect_full_file_context(files)
 
     recent_patches = ""
-    if consider_recent_patches:
-        recent_patches = get_recent_patches(files)
-        if recent_patches:
-            recent_patches = (
-                "Recent patches that touched the files touched in this patch:\n"
-                + "<recent_patches>"
-                + "".join(f"\n<patch>\n{patch}\n</patch>\n" for patch in recent_patches)
-                + "</recent_patches>"
-            )
+    if recent_patches_to_consider:
+        recent_patches = (
+            "Recent patches that touched the files touched in this patch:\n"
+            + format_recent_patches(recent_patches_to_consider)
+        )
 
     if mode == "quick":
         mode_instructions = (
@@ -500,26 +515,18 @@ def main():
     parser.add_argument(
         "--consider-recent-patches",
         action="store_true",
-        help="Include recent patches in LLM context during code review",
+        help="Include recent patches in LLM context during commit message generation and code review",
     )
     parser.add_argument(
         "--include-full-file-context",
         action="store_true",
-        help="Include full file contents in LLM context during code review",
+        help="Include full file contents in LLM context during commit message generation and code review",
     )
     args = parser.parse_args()
 
     if not os.environ.get("OPENROUTER_API_KEY"):
         print("Error: OPENROUTER_API_KEY environment variable not set")
         print("Please set it with: export OPENROUTER_API_KEY=your_api_key_here")
-        sys.exit(1)
-
-    if args.consider_recent_patches and not args.code_review:
-        print("Error: --consider-recent-patches requires --code-review")
-        sys.exit(1)
-
-    if args.include_full_file_context and not args.code_review:
-        print("Error: --include-full-file-context requires --code-review")
         sys.exit(1)
 
     diff = git(["show", "HEAD"]) if args.head else git(["diff", "--staged"])
@@ -531,10 +538,12 @@ def main():
     files = get_touched_files(args.head)
 
     recent_messages = get_recent_messages(files, limit=args.history_limit)
+    recent_patches = get_recent_patches(files) if args.consider_recent_patches else []
 
     result = generate_commit_message(
         diff,
         recent_messages,
+        recent_patches,
         args.model,
         debug=args.debug,
         num_retries=args.num_retries,
@@ -569,7 +578,7 @@ def main():
             model=args.model,
             debug=args.debug,
             include_full_file_context=args.include_full_file_context,
-            consider_recent_patches=args.consider_recent_patches,
+            recent_patches_to_consider=recent_patches,
             num_retries=args.num_retries,
         )
         if review_text:
