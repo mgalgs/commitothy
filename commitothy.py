@@ -61,6 +61,44 @@ REMEMBER: do not add trailer lines. For example, `Signed-off-by:`, `Commit-Messa
 {postamble}
 """
 
+REVIEW_PROMPT_TEMPLATE = """\
+You are a senior code reviewer. Produce a TL;DR-first review that a busy developer can scan in seconds, while still offering details for deeper reading when needed.
+
+Mode: {mode}
+
+Critical priorities:
+- If there are security issues, make a huge fuss in the TL;DR and detail them first.
+- If there are clear bugs, call them out explicitly in the TL;DR and detail them.
+- If nothing critical, keep the TL;DR reassuring and concise.
+
+Output format (strict):
+TL;DR: [TAG,...] <1-2 sentence summary>
+# TAG must be one of: [SECURITY], [BUG], [ISSUE], [OK].
+Text should wrap at 80 characters.
+
+Details:
+- Security: <bullets, or "None">
+- Bugs: <bullets, or "None">
+- Correctness & Edge Cases: <bullets, or "None">
+- Performance: <bullets, or "None">
+- Tests: <bullets, or "Suggested test updates">
+- Maintainability/Style: <bullets, or "None">
+
+Guidelines:
+{mode_instructions}
+- Be specific, reference lines/hunks when possible.
+- Professional, helpful tone. No preface or closing beyond the required sections.
+
+Context to review:
+
+Git diff:
+<diff>
+{diff}
+</diff>
+
+{file_context}
+"""
+
 
 def git(args):
     try:
@@ -100,6 +138,23 @@ def get_changed_files():
         return []
 
 
+def get_touched_files(head: bool = False):
+    """Get list of files touched in the current context (staged or HEAD)."""
+    if head:
+        try:
+            result = subprocess.run(
+                ["git", "show", "--name-only", "--pretty=format:", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            files = [f for f in result.stdout.strip().split("\n") if f.strip()]
+            return files
+        except subprocess.CalledProcessError:
+            return []
+    return get_changed_files()
+
+
 def get_recent_messages(files, limit=20):
     """Get recent commit messages for the specified files."""
     if not files:
@@ -135,8 +190,8 @@ def get_commit_message_file() -> str | None:
     return None
 
 
-def llm_call(prompt, model="openrouter/auto", debug=False):
-    """Call the OpenRouter API to generate a commit message."""
+def llm_call(prompt, model="openrouter/auto", debug=False, max_tokens=2000):
+    """Call the OpenRouter API to generate text."""
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=os.environ.get("OPENROUTER_API_KEY", ""),
@@ -148,12 +203,12 @@ def llm_call(prompt, model="openrouter/auto", debug=False):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant that writes git commit messages.",
+                    "content": "You are a helpful assistant that writes git commit messages and code reviews.",
                 },
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=2000,
+            max_tokens=max_tokens,
             extra_headers={
                 "HTTP-Referer": "https://mgalgs.io",
                 "X-Title": "Commitothy",
@@ -244,16 +299,96 @@ def generate_commit_message(
         print("Debug mode enabled. Prompt being sent to OpenRouter:")
         print(prompt)
 
-    while num_retries > 0:
-        response = llm_call(prompt, model=model, debug=debug)
+    retries = num_retries
+    while retries > 0:
+        response = llm_call(prompt, model=model, debug=debug, max_tokens=2000)
         if response and response.get("content"):
             return {
                 "message": response["content"].strip(),
                 "model": response["model"],
             }
-        num_retries -= 1
+        retries -= 1
 
     return None
+
+
+def collect_full_file_context(files: list[str]) -> str:
+    gitroot = get_git_root()
+    if gitroot is None or not files:
+        return ""
+    chunks: list[str] = []
+    for f in files:
+        try:
+            p = (gitroot / f).resolve()
+            if not p.is_file():
+                continue
+            content = p.read_text(encoding="utf-8", errors="replace")
+            chunks.append(
+                f'<file path="{f}">\n<content>\n{content}\n</content>\n</file>'
+            )
+        except Exception:
+            continue
+    if not chunks:
+        return ""
+    return (
+        "Full contents of touched files (for additional context):\n<files>\n"
+        + "\n\n".join(chunks)
+        + "\n</files>\n"
+    )
+
+
+def generate_code_review(
+    diff: str,
+    files: list[str],
+    mode: str,
+    model: str,
+    debug: bool,
+    num_retries: int = 3,
+):
+    file_context = ""
+    if mode == "full":
+        file_context = collect_full_file_context(files)
+        if not file_context:
+            file_context = (
+                "No full file contents available; proceed using diff context only."
+            )
+
+    if mode == "quick":
+        mode_instructions = (
+            "- Keep the body to <= 8 short bullets total across sections.\n"
+            "- Skip nitpicks unless they materially reduce clarity or safety.\n"
+            "- Prefer actionable phrasing (e.g., 'Add X test', 'Handle Y edge case')."
+        )
+    else:
+        mode_instructions = (
+            "- Provide thorough, but organized sections with concise bullets.\n"
+            "- Include concrete suggestions and brief rationale; cite hunks/lines when possible.\n"
+            "- It's acceptable for this to be longer, but avoid repetition."
+        )
+
+    prompt = REVIEW_PROMPT_TEMPLATE.format(
+        mode=mode,
+        mode_instructions=mode_instructions,
+        diff=diff,
+        file_context=file_context,
+    ).strip()
+
+    if debug:
+        print("Debug mode enabled. Code review prompt being sent to OpenRouter:")
+        print(prompt)
+
+    retries = num_retries
+    max_tokens = 3500 if mode == "full" else 1200
+    while retries > 0:
+        response = llm_call(prompt, model=model, debug=debug, max_tokens=max_tokens)
+        if response and response.get("content"):
+            return response["content"].strip()
+        retries -= 1
+    return None
+
+
+def comment_lines(text: str) -> str:
+    return "\n".join(["# " + line for line in text.splitlines()])
 
 
 def main():
@@ -299,6 +434,16 @@ def main():
         type=int,
         help="Cursor position in .git/COMMIT_MESSAGE for completion (requires --improve-message)",
     )
+    parser.add_argument(
+        "--code-review",
+        nargs="?",
+        const="quick",
+        choices=["quick", "full"],
+        help=(
+            "Append an AI code review as commented markdown after the commit message. "
+            "If provided without a value, defaults to 'quick'. Use 'full' to include full contents of touched files for deeper context."
+        ),
+    )
     args = parser.parse_args()
 
     if not os.environ.get("OPENROUTER_API_KEY"):
@@ -312,7 +457,7 @@ def main():
         print("No staged changes found. Please stage some changes first.")
         sys.exit(1)
 
-    files = get_changed_files()
+    files = get_touched_files(args.head)
 
     recent_messages = get_recent_messages(files, limit=args.history_limit)
 
@@ -343,6 +488,21 @@ def main():
             commit_message += f"\n\n{trailer}"
 
     print(commit_message)
+
+    if args.code_review:
+        mode = args.code_review
+        review_text = generate_code_review(
+            diff=diff,
+            files=files,
+            mode=mode,
+            model=args.model,
+            debug=args.debug,
+            num_retries=args.num_retries,
+        )
+        if review_text:
+            header = f"# Code review ({mode})"
+            print("\n" + header)
+            print(comment_lines(review_text))
 
 
 if __name__ == "__main__":

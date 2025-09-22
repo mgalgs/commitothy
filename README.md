@@ -21,6 +21,8 @@ style of your existing project.
 - 🐍 Standalone script using `uv` and `openai` - no heavy dependencies
 - 💬 Adds a `Commit-Message-Co-Author` trailer indicating which AI model
   generated the message (disable with `--no-trailer`)
+- 🧑‍⚖️ Optional AI **code review** appended as commented Markdown after the commit message
+  (quick or full modes)
 
 ## Installation
 
@@ -56,10 +58,14 @@ commitothy.py --model google/gemini-2.5-flash
 
 Other options:
 ```bash
---history-limit N     # number of recent commits to analyze (default: 20)
---num-retries N       # retry failed API calls (default: 3)
+--history-limit N       # number of recent commits to analyze (default: 20)
+--num-retries N         # retry failed API calls (default: 3)
 --no-trailer            # don't add AI model attribution trailer
---debug               # show full prompt sent to model
+--debug                 # show full prompt sent to model
+--code-review[=MODE]    # append an AI code review as commented Markdown after the
+                        # commit message. MODE can be 'quick' or 'full'. If provided
+                        # without a value, defaults to 'quick'. 'full' will include the
+                        # full contents of all touched files for deeper context.
 ```
 
 Use with `git commit`:
@@ -67,13 +73,26 @@ Use with `git commit`:
 git commit -m "$(commitothy.py)"
 ```
 
+Generate commit message with code review appended (quick):
+```bash
+commitothy.py --code-review
+```
+
+Generate commit message with code review appended (includes full file context for touched files):
+```bash
+commitothy.py --code-review=full
+```
+
 ## How It Works
 
-1. Collects the staged Git diff (`git diff --staged`)
+1. Collects the staged Git diff (`git diff --staged`) or `git show HEAD` when
+   `--head`
 2. Finds recently committed messages for the same files
 3. Builds a smart prompt with code changes + style examples
 4. Asks the LLM to generate a commit message matching the project's tone and format
-5. Outputs clean message ready for `git commit`
+5. Optionally generates a code review, using either just the diff (quick) or the diff
+   plus the full contents of touched files (full)
+6. Outputs clean message ready for `git commit`, with the review appended as `# `-prefixed comments
 
 ## Requirements
 
