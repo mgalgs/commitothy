@@ -99,6 +99,8 @@ Git diff:
 </diff>
 
 {file_context}
+
+{recent_patches}
 """
 
 
@@ -157,25 +159,64 @@ def get_touched_files(head: bool = False):
     return get_changed_files()
 
 
-def get_recent_messages(files, limit=20):
+def _get_recent_commits(
+    files, limit, git_log_args: list[str] | None = None
+) -> list[str]:
     """Get recent commit messages for the specified files."""
     if not files:
         return []
 
+    git_log_args = git_log_args or []
     try:
         separator = "===COMMIT_SEPARATOR==="
-        cmd = [
-            "git",
-            "log",
-            f"-{limit}",
-            f"--pretty=format:%B{separator}",
-            "--",
-        ] + files
+        cmd = (
+            [
+                "git",
+                "log",
+                f"-{limit}",
+                f"--pretty=format:{separator}%B",
+            ]
+            + git_log_args
+            + ["--"]
+            + files
+        )
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         commits = result.stdout.strip().split(separator)
         return [commit for commit in commits if commit.strip()]
     except subprocess.CalledProcessError:
         return []
+
+
+def get_recent_messages(files, limit=20):
+    return _get_recent_commits(files, limit)
+
+
+def get_recent_patches(files: list[str], limit=5) -> list[str]:
+    """
+    Get the 5 most recent patches that touched the specified files. Anything
+    longer than 500 lines is elided in the middle.
+    """
+    if not files:
+        return []
+
+    patches = _get_recent_commits(files, limit, git_log_args=["--patch"])
+    ret_patches = []
+    for patch in patches:
+        # Elide to 500 lines (center elision)
+        lines = patch.splitlines()
+        if len(lines) > 500:
+            lines = (
+                lines[:250]
+                + [
+                    "",
+                    f"### PATCH ELIDED FOR BREVITY ({len(lines) - 500} lines skipped) ###",
+                    "",
+                ]
+                + lines[-250:]
+            )
+        ret_patches.append("\n".join(lines))
+
+    return ret_patches
 
 
 def get_commit_message_file() -> str | None:
@@ -345,6 +386,7 @@ def generate_code_review(
     mode: str,
     model: str,
     debug: bool,
+    consider_recent_patches: bool,
     num_retries: int = 3,
 ):
     file_context = ""
@@ -353,6 +395,16 @@ def generate_code_review(
         if not file_context:
             file_context = (
                 "No full file contents available; proceed using diff context only."
+
+    recent_patches = ""
+    if consider_recent_patches:
+        recent_patches = get_recent_patches(files)
+        if recent_patches:
+            recent_patches = (
+                "Recent patches that touched the files touched in this patch:\n"
+                + "<recent_patches>"
+                + "".join(f"\n<patch>\n{patch}\n</patch>\n" for patch in recent_patches)
+                + "</recent_patches>"
             )
 
     if mode == "quick":
@@ -373,6 +425,7 @@ def generate_code_review(
         mode_instructions=mode_instructions,
         diff=diff,
         file_context=file_context,
+        recent_patches=recent_patches,
     ).strip()
 
     if debug:
@@ -446,11 +499,20 @@ def main():
             "If provided without a value, defaults to 'quick'. Use 'full' to include full contents of touched files for deeper context."
         ),
     )
+    parser.add_argument(
+        "--consider-recent-patches",
+        action="store_true",
+        help="Include recent patches in LLM context during code review",
+    )
     args = parser.parse_args()
 
     if not os.environ.get("OPENROUTER_API_KEY"):
         print("Error: OPENROUTER_API_KEY environment variable not set")
         print("Please set it with: export OPENROUTER_API_KEY=your_api_key_here")
+        sys.exit(1)
+
+    if args.consider_recent_patches and not args.code_review:
+        print("Error: --consider-recent-patches requires --code-review")
         sys.exit(1)
 
     diff = git(["show", "HEAD"]) if args.head else git(["diff", "--staged"])
@@ -499,6 +561,7 @@ def main():
             mode=mode,
             model=args.model,
             debug=args.debug,
+            consider_recent_patches=args.consider_recent_patches,
             num_retries=args.num_retries,
         )
         if review_text:
