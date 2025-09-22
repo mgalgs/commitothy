@@ -386,15 +386,13 @@ def generate_code_review(
     mode: str,
     model: str,
     debug: bool,
+    include_full_file_context: bool,
     consider_recent_patches: bool,
     num_retries: int = 3,
 ):
     file_context = ""
-    if mode == "full":
+    if include_full_file_context:
         file_context = collect_full_file_context(files)
-        if not file_context:
-            file_context = (
-                "No full file contents available; proceed using diff context only."
 
     recent_patches = ""
     if consider_recent_patches:
@@ -504,6 +502,11 @@ def main():
         action="store_true",
         help="Include recent patches in LLM context during code review",
     )
+    parser.add_argument(
+        "--include-full-file-context",
+        action="store_true",
+        help="Include full file contents in LLM context during code review",
+    )
     args = parser.parse_args()
 
     if not os.environ.get("OPENROUTER_API_KEY"):
@@ -513,6 +516,10 @@ def main():
 
     if args.consider_recent_patches and not args.code_review:
         print("Error: --consider-recent-patches requires --code-review")
+        sys.exit(1)
+
+    if args.include_full_file_context and not args.code_review:
+        print("Error: --include-full-file-context requires --code-review")
         sys.exit(1)
 
     diff = git(["show", "HEAD"]) if args.head else git(["diff", "--staged"])
@@ -561,6 +568,7 @@ def main():
             mode=mode,
             model=args.model,
             debug=args.debug,
+            include_full_file_context=args.include_full_file_context,
             consider_recent_patches=args.consider_recent_patches,
             num_retries=args.num_retries,
         )
