@@ -180,7 +180,7 @@ def _get_recent_commits(
             + ["--"]
             + files
         )
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, encoding="utf-8", check=True)
         commits = result.stdout.strip().split(separator)
         return [commit for commit in commits if commit.strip()]
     except subprocess.CalledProcessError:
