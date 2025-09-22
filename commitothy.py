@@ -505,7 +505,7 @@ def main():
     parser.add_argument(
         "--code-review",
         nargs="?",
-        const="quick",
+        const="full",
         choices=["quick", "full"],
         help=(
             "Append an AI code review as commented markdown after the commit message. "
