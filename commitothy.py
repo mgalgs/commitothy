@@ -129,7 +129,7 @@ def get_git_root(path=".") -> Path | None:
         path = newpath
 
 
-def get_changed_files():
+def get_staged_files() -> list[str]:
     """Get list of staged files."""
     try:
         result = subprocess.run(
@@ -157,7 +157,7 @@ def get_touched_files(head: bool = False):
             return files
         except subprocess.CalledProcessError:
             return []
-    return get_changed_files()
+    return get_staged_files()
 
 
 def _get_recent_commits(
