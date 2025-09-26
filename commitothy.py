@@ -143,12 +143,18 @@ def get_staged_files() -> list[str]:
         return []
 
 
-def get_touched_files(head: bool = False):
-    """Get list of files touched in the current context (staged or HEAD)."""
-    if head:
+def get_touched_files(rev: str | None = None) -> list[str]:
+    """Get list of files touched in the current context (staged or specified revision)."""
+    if rev:
+        # Have to use `git diff` for ranges, and `git show` for single commits
+        if ".." in rev:
+            cmd = ["git", "diff", "--name-only", rev]
+        else:
+            cmd = ["git", "show", "--name-only", "--pretty=format:", rev]
+
         try:
             result = subprocess.run(
-                ["git", "show", "--name-only", "--pretty=format:", "HEAD"],
+                cmd,
                 capture_output=True,
                 text=True,
                 check=True,
@@ -472,7 +478,15 @@ def main():
     parser.add_argument(
         "--head",
         action="store_true",
-        help="Analyze changes from `git show HEAD` rather than `git diff --staged`. Useful when amending.",
+        help="Alias for --rev HEAD",
+    )
+    parser.add_argument(
+        "--rev",
+        help=(
+            "Analyze changes from `git show rev` (or `git diff rev` when rev is a range) "
+            "rather than `git diff --staged`. Useful when amending (--rev HEAD) or when "
+            "you want to review another patch or patches (--rev c1, --rev r1..r2, etc)."
+        ),
     )
     parser.add_argument(
         "--history-limit",
@@ -529,13 +543,26 @@ def main():
         print("Please set it with: export OPENROUTER_API_KEY=your_api_key_here")
         sys.exit(1)
 
-    diff = git(["show", "HEAD"]) if args.head else git(["diff", "--staged"])
-
-    if not diff.strip():
-        print("No staged changes found. Please stage some changes first.")
+    if args.head and args.rev:
+        print("Error: --head and --rev cannot be used together")
         sys.exit(1)
 
-    files = get_touched_files(args.head)
+    rev = "HEAD" if args.head else args.rev
+
+    if rev:
+        # Range needs to use `git diff`, otherwise `git show`
+        diff = git(["diff", rev]) if ".." in rev else git(["show", rev])
+    else:
+        diff = git(["diff", "--staged"])
+
+    if not diff.strip():
+        if rev:
+            print(f"No changes found for revision '{rev}'.")
+        else:
+            print("No staged changes found. Please stage some changes first.")
+        sys.exit(1)
+
+    files = get_touched_files(rev=rev)
 
     recent_messages = get_recent_messages(files, limit=args.history_limit)
     recent_patches = get_recent_patches(files) if args.consider_recent_patches else []
