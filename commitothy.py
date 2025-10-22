@@ -167,46 +167,66 @@ def get_touched_files(rev: str | None = None) -> list[str]:
 
 
 def _get_recent_commits(
-    files, limit, git_log_args: list[str] | None = None
-) -> list[str]:
-    """Get recent commit messages for the specified files."""
-    if not files:
-        return []
-
+    files: list[str], limit: int, git_log_args: list[str] | None = None
+) -> list[tuple[str, str]]:
+    """
+    Get recent commit messages for the specified files. Returns a list of
+    2-tuples of the form (sha1, commit)
+    """
     git_log_args = git_log_args or []
     try:
         separator = "===COMMIT_SEPARATOR==="
-        cmd = (
-            [
-                "git",
-                "log",
-                f"-{limit}",
-                f"--pretty=format:{separator}%B",
-            ]
-            + git_log_args
-            + ["--"]
-            + files
-        )
+        cmd = [
+            "git",
+            "log",
+            f"-{limit}",
+            f"--pretty=format:{separator}%H %B",
+        ] + git_log_args
+        if files:
+            cmd += ["--"] + files
+
         result = subprocess.run(cmd, capture_output=True, encoding="utf-8", check=True)
         commits = result.stdout.strip().split(separator)
-        return [commit for commit in commits if commit.strip()]
+
+        def _fmt(c):
+            idx = c.index(" ")
+            return (c[:idx], c[idx + 1 :])
+
+        return [_fmt(commit) for commit in commits if commit.strip()]
     except subprocess.CalledProcessError:
         return []
 
 
 def get_recent_messages(files, limit=20):
-    return _get_recent_commits(files, limit)
+    # Throw away the sha1 (which is in c[0])
+    return [c[1] for c in _get_recent_commits(files, limit)]
 
 
-def get_recent_patches(files: list[str], limit=5) -> list[str]:
+def get_recent_patches(
+    files: list[str], n_recent_patches, n_recent_patches_touching_files
+) -> list[str]:
     """
-    Get the 5 most recent patches that touched the specified files. Anything
-    longer than 500 lines is elided in the middle.
+    Get the requested number of most recent patches plus the requested number of
+    recent patches that touched the specified files. Duplicates are removed (i.e. if
+    a patch is both generally recent *and* recently touched the given files).
+
+    Anything longer than 500 lines is elided in the middle.
     """
     if not files:
         return []
 
-    patches = _get_recent_commits(files, limit, git_log_args=["--patch"])
+    recent_patches = _get_recent_commits([], n_recent_patches, git_log_args=["--patch"])
+    patches_touching_files = _get_recent_commits(
+        files, n_recent_patches_touching_files, git_log_args=["--patch"]
+    )
+    patches = []
+    seen_sha1s = set()
+    for (sha1, patch) in recent_patches + patches_touching_files:
+        if sha1 in seen_sha1s:
+            continue
+        seen_sha1s.add(sha1)
+        patches.append(patch)
+
     ret_patches = []
     for patch in patches:
         # Elide to 500 lines (center elision)
@@ -287,6 +307,8 @@ def generate_commit_message(
     diff,
     recent_messages: list[str],
     recent_patches: list[str],
+    n_recent_patches: int,
+    n_recent_patches_touching_files: int,
     model="openrouter/auto",
     debug=False,
     num_retries=3,
@@ -301,9 +323,11 @@ def generate_commit_message(
     recent_patches_text = ""
     if recent_patches:
         recent_patches_text = (
-            "Recent patches touching these files:\n"
-            + format_recent_patches(recent_patches)
-        )
+            f"{n_recent_patches} most recent patches, plus "
+            f"{n_recent_patches_touching_files} recent patches "
+            "touching these files (with duplicate patches "
+            "removed, if any):\n"
+        ) + format_recent_patches(recent_patches)
 
     if improve_message:
         commit_message = get_commit_message_file()
@@ -565,12 +589,20 @@ def main():
     files = get_touched_files(rev=rev)
 
     recent_messages = get_recent_messages(files, limit=args.history_limit)
-    recent_patches = get_recent_patches(files) if args.consider_recent_patches else []
+    n_recent_patches = 2
+    n_recent_patches_touching_files = 3
+    recent_patches = (
+        get_recent_patches(files, n_recent_patches, n_recent_patches_touching_files)
+        if args.consider_recent_patches
+        else []
+    )
 
     result = generate_commit_message(
         diff,
         recent_messages,
         recent_patches,
+        n_recent_patches,
+        n_recent_patches_touching_files,
         args.model,
         debug=args.debug,
         num_retries=args.num_retries,
