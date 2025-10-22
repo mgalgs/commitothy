@@ -475,6 +475,11 @@ def generate_code_review(
         print("Debug mode enabled. Code review prompt being sent to OpenRouter:")
         print(prompt)
 
+    log_file = Path("/tmp/commitothy/log.txt")
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    with log_file.open("w", encoding="utf-8") as f:
+        f.write(f"Prompt:\n{prompt}\n\n")
+
     retries = num_retries
     max_tokens = 3500 if mode == "full" else 1200
     while retries > 0:
