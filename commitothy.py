@@ -221,7 +221,7 @@ def get_recent_patches(
     )
     patches = []
     seen_sha1s = set()
-    for (sha1, patch) in recent_patches + patches_touching_files:
+    for sha1, patch in recent_patches + patches_touching_files:
         if sha1 in seen_sha1s:
             continue
         seen_sha1s.add(sha1)
